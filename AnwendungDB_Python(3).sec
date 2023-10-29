@@ -1,0 +1,177 @@
+import cx_Oracle
+import con_to_oracle
+import click
+
+# Initialization
+con = None
+#print("before the connection")
+
+# Establishing the connection
+def connecting():
+    global con
+    dsn_str = cx_Oracle.makedsn("studidb.gm.th-koeln.de", "1521", "vlesung")
+    con = cx_Oracle.connect(user=con_to_oracle.user, password=con_to_oracle.userpwd, dsn=dsn_str)
+
+connecting()
+
+print("connected")
+
+# Create cursor
+cursor = con.cursor()
+
+# Initialize variables
+#BestellPreis = 0
+#readInt = 0
+
+print("Executing queries")
+
+#User Data / greetings
+
+name = click.prompt("Please enter your name")
+click.echo("Welcome to the Food Ordering Database! Eine Bestellung für %s " %name)
+
+click.echo("Hello, %s!" % name)
+
+
+Email = click.prompt("Please enter your email")  
+query = "SELECT Kunden_ID FROM Kunde WHERE Email = :Email_ph"
+cursor.execute(query, Email_ph = Email)
+row = cursor.fetchone()                         #gets user ID with given email
+if row is None:
+    click.echo("No user found with that username.")
+else:
+    kunden_id = row[0]
+
+    print(kunden_id)
+
+
+print("Treffen Sie bitte eine Auswahl: ") 
+
+# Kunde trifft eine Auswahl
+angebot = []  # Initialize angebot as an empty list
+
+# initialize an empty list to hold orders
+orderlist = []
+
+# keep asking for orders until 'DONE' is entered
+while True:
+    print("Vorhandene Gerichte: \n301 'Guacamole Nachos', 16.50  \n302 'veggie burger und Fritten', 20.75  \n303 'Ueberaschungsangebot', 40.25  \n")
+    auswahl = input("Please enter your choice or type 'DONE' to place the order: ")
+
+    # break the loop if 'DONE' is entered
+    if auswahl == 'DONE':
+        break
+
+    # validate the choice
+    if auswahl not in ['301', '302', '303']:
+        print("%s not yet available, hopefully you can find something from the available choices" % auswahl)
+        continue  # skip the rest of this loop iteration
+
+    orderlist.append(auswahl) 
+
+# gespeicherte Bestellung
+print("Saved order:", orderlist)
+print("Bestellauftrag für den Kunde mit dem ID: %s " %kunden_id)
+print("n\          ")
+
+
+
+# Wert der Bestellung
+BestellPreis = 0
+for order in orderlist:
+    query = "SELECT Preis FROM Angebote WHERE Angebot_ID = :auswahlInAng"
+    cursor.execute(query, auswahlInAng=order)
+    for row in cursor:
+        BestellPreis += row[0]
+        print("Derzeitiger Bestellwert: %s" % BestellPreis)
+
+
+# durchschnitlliche Bewertung aufrufen
+durchschnitt = cursor.callfunc('ausrechnung_bewertung', cx_Oracle.NUMBER)
+print('Durchschnittliche Bewertung: ', durchschnitt)  
+print("          ") 
+
+##trigger coupon
+
+discCode = None
+
+# Ask for a discount code after all items have been added
+if discCode is None:
+    disc = input("Do you have a discount code? [y] for yes and [n] for no")
+    if disc == 'y':
+        entered_code = input("Enter code / coupon_ID: ")
+
+        # Prepare the statements
+        check_coupon_exists_stmt = "SELECT Coupon_ID FROM Coupon WHERE Coupon_ID = :entered_code"
+        check_coupon_used_stmt = "SELECT Coupon_ID FROM Bestellauftrag WHERE Coupon_ID = :entered_code"
+        
+        # Check if the code exists in the database
+        cursor.prepare(check_coupon_exists_stmt)
+        cursor.execute(None, {'entered_code': entered_code})
+        result = cursor.fetchone()
+
+
+        if result is None:                                  #code doesnt exists  
+            print("The entered code does not exist.")
+        else:
+                                                            #has the code been used?
+            cursor.prepare(check_coupon_used_stmt)
+            cursor.execute(None, {'entered_code': entered_code})
+            result = cursor.fetchone()
+
+            if result is not None:                           # used code
+                print("The entered code has already been used.")
+            else:
+                                                            #code is valid and unused, can be applied
+                discCode = entered_code
+                print("Code successfully entered.")
+    elif disc == 'n':
+        print("You chose not to apply a discount code.")
+        print("          ")
+    else:
+        print("Invalid input, no discount code applied.")
+
+        # Fetch the discount percentage for the entered discount code
+cursor.execute("SELECT Rabattprozent FROM Coupon WHERE Coupon_ID = :entered_code", {'entered_code': discCode})
+result = cursor.fetchone()
+
+# If there is a discount code
+if result is not None:
+    Rabattprozent = result[0]
+    # Calculate the new price
+    discounted_price = BestellPreis * (1 - Rabattprozent / 100)
+    print("New price is:", discounted_price)
+
+print("          ")
+print("Saved order:", orderlist)
+
+# Prepared statements
+insert_order_stmt = """
+    INSERT INTO BESTELLAUFTRAG(Bestell_ID, Kunden_ID, Angebot_ID, BestellPreis, Coupon_ID) 
+    VALUES(bestell_id_seq.NEXTVAL, :kunden_id, :angebot_id, :bestellpreis, :coupon_id)
+"""
+cursor.prepare(insert_order_stmt)
+
+# INSERT Befehle
+for auswahl in orderlist:
+    if disc == 'y':
+        cursor.execute(insert_order_stmt, {'kunden_id': kunden_id, 'angebot_id': auswahl, 'bestellpreis': BestellPreis, 'coupon_id': discCode})
+    else:
+        cursor.execute(insert_order_stmt, {'kunden_id': kunden_id, 'angebot_id': auswahl, 'bestellpreis': BestellPreis, 'coupon_id': None})
+
+print("orders placed")
+
+# Retrieve and print the last few orders
+cursor.execute("SELECT * FROM BESTELLAUFTRAG ORDER BY Bestell_ID DESC FETCH FIRST 5 ROWS ONLY")
+rows = cursor.fetchall()
+for row in rows:
+    print(row)
+
+
+# Änderungen mit Commit speichern 
+con.commit()
+
+# Cursor und Verbindung schließen
+cursor.close()
+con.close()
+

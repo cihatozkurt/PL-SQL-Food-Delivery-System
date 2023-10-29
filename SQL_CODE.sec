@@ -1,0 +1,338 @@
+
+DROP TABLE Kunde CASCADE CONSTRAINTS;
+DROP TABLE Kurier CASCADE CONSTRAINTS;
+DROP TABLE Angebote CASCADE CONSTRAINTS;
+DROP TABLE Bestellauftrag CASCADE CONSTRAINTS;
+DROP TABLE Coupon CASCADE CONSTRAINTS;
+DROP TABLE Bewertung CASCADE CONSTRAINTS;
+
+
+
+
+CREATE TABLE Kunde( Kunden_ID NUMBER,
+                  Name VARCHAR2(15),
+                  Vorname VARCHAR2(15),
+                  Email VARCHAR2(50) UNIQUE ,
+                  Adresse VARCHAR2(25),
+                  Telefon VARCHAR2(15),
+                  Last_activity_date DATE,
+                  Registrierungs_Datum DATE,
+                  CONSTRAINT kunden_PK primary key (Kunden_ID)
+                  );
+
+
+CREATE TABLE Kurier( Kurier_ID NUMBER,
+                      Name VARCHAR2(15),
+                      Vorname VARCHAR2(15),
+                      Telefon VARCHAR2(15),
+                     CONSTRAINT Kurier_PK primary key (Kurier_ID));
+
+
+
+CREATE TABLE Angebote(Angebot_ID NUMBER ,
+                      Beschreibung VARCHAR2(25),
+                      Preis DECIMAL,
+                      CONSTRAINT Angebote_PK primary key (Angebot_ID));
+
+
+
+CREATE TABLE Bestellauftrag(Bestell_ID NUMBER,
+                            Kunden_ID NUMBER,
+                            Kurier_ID NUMBER,
+                            Kunde_Email VARCHAR2(50),
+                            Angebot_ID NUMBER,
+                            Coupon_ID NUMBER,
+                             Menge INTEGER,
+                             BestellPreis DECIMAL,
+                             total DECIMAL,
+                             Preis NUMBER,
+                             Status VARCHAR2(15),
+                            BestellDatum DATE,
+                            Zahlungsart VARCHAR2(15),
+                            CONSTRAINT Bes_PK primary key (Bestell_ID)
+
+);
+
+CREATE SEQUENCE bestell_id_seq START WITH 1 INCREMENT BY 1;
+
+
+CREATE TABLE Coupon(Coupon_ID NUMBER(3),
+                    Bestell_ID NUMBER NOT NULL,
+                    Rabattprozent INTEGER,
+                    is_valid NUMBER(1),
+                    ablaufDatum DATE,
+                    CONSTRAINT Coupon_PK primary key (Coupon_ID)
+);
+
+
+CREATE TABLE Bewertung(Bewertung_ID NUMBER,
+                       Kunden_ID NUMBER,
+                       Angebot_ID NUMBER,
+                        Punkte INTEGER NOT NULL ,
+                        Kommentar VARCHAR2(100),
+                        Datum DATE,
+                        CONSTRAINT Bew_PK primary key (Bewertung_ID)
+);
+
+--FK's--
+
+--FKs in Bestellauftrag
+ALTER TABLE Bestellauftrag ADD CONSTRAINT Kun_FK
+    FOREIGN KEY (Kunden_ID) REFERENCES Kunde(Kunden_ID);
+ALTER TABLE Bestellauftrag ADD CONSTRAINT Kur_FK
+    FOREIGN KEY (Kurier_ID) REFERENCES Kurier(Kurier_ID);
+ALTER TABLE Bestellauftrag ADD CONSTRAINT Angebot_FK
+    FOREIGN KEY (Angebot_ID) REFERENCES Angebote(Angebot_ID);
+
+--FKs in Coupon
+ALTER TABLE Coupon ADD CONSTRAINT Bes_ID
+    FOREIGN KEY (Bestell_ID) REFERENCES Bestellauftrag(Bestell_ID);
+
+--FKs in Bewertung
+ALTER TABLE Bewertung ADD CONSTRAINT KunInBew_FK
+    FOREIGN KEY (Kunden_ID) REFERENCES Kunde(Kunden_ID);
+ALTER TABLE Bewertung ADD CONSTRAINT AngebotInBew_FK
+    FOREIGN KEY (Angebot_ID) REFERENCES Angebote(Angebot_ID);
+
+
+
+--Beispieldatensätze
+
+
+INSERT INTO KUNDE VALUES (887 , 'Doe' , 'Jane' , 'janedoe@exmail.com' , 'Jane str LDN 78156' ,  '+4415987632', '11-05-2023' , '10-05-2023' );
+
+INSERT INTO Kurier VALUEs (59,'Muster' , 'Max' , '+447895516');
+
+
+INSERT INTO Bestellauftrag(Bestell_ID,
+                            Kunden_ID,
+                            Kurier_ID,
+                            Angebot_ID,
+                             Menge ,
+                             BestellPreis ,
+                             BestellDatum,
+                            Zahlungsart ) VALUES (003, 887 , 598 , 111 , 2, 6.99,
+                                                  '17-12-2022', 'paypal');
+
+
+INSERT INTO Angebote VALUES (111, 'Guacomole Nachos', 6.99);
+
+INSERT INTO Bewertung (Bewertung_ID,
+                       Kunden_ID ,
+                       Angebot_ID,
+                        Punkte ,
+                        Kommentar ,
+                        Datum) VALUES (9637 , 887 , 111 , 4.0 ,
+                                       'lecker,aber doch zu wenig für den Preis.' , '18-12-2022');
+
+COMMIT;
+
+SELECT * FROM Bestellauftrag;
+SELECT * FROM Angebote;
+
+
+--Triggers
+
+--update orders's status
+
+CREATE TRIGGER update_Bestellauftrag
+AFTER INSERT ON Bestellauftrag
+FOR EACH ROW
+BEGIN
+  UPDATE Bestellauftrag
+  SET Status = 'In Bearbeitung'
+  WHERE Bestell_ID = NEW.Bestell_ID;
+END;
+COMMIT;
+
+--inaktive Kunden löschen
+CREATE TRIGGER Inaktive_Kunde_löschen
+AFTER UPDATE ON Kunde
+FOR EACH ROW
+    DECLARE
+        current_date DATE := SYSDATE;   months_diff NUMBER; --exact_date Date := Letzte_Aktivität_Datum;
+BEGIN
+    IF   MONTHS_BETWEEN(current_date, Letzte_Aktivität_Datum) > 24
+ THEN
+        DELETE FROM Kunde WHERE Kunden_ID = NEW.Kunden_ID;
+    END IF;
+END;
+
+--Funktionen
+
+--gesamtpreis
+
+
+CREATE OR REPLACE FUNCTION gesamtpreis (
+    p_bestell_id IN NUMBER
+) RETURN NUMBER
+IS
+    gesamt         NUMBER;
+    min_order_price NUMBER := 10; -- Minimum order price threshold
+BEGIN
+    SELECT SUM(BestellPreis * Menge)
+    INTO gesamt
+    FROM Bestellauftrag
+    WHERE Bestell_ID = p_bestell_id;
+
+    IF gesamt <= min_order_price THEN
+        RAISE_APPLICATION_ERROR(-20000, 'Please add more items to the order.');
+    END IF;
+
+    RETURN gesamt;
+END;
+
+
+
+    --testing gesamt
+    SELECT SUM (Preis * Menge) FROM Bestellauftrag WHERE KUNDEN_ID = KUNDEN_ID;
+
+    SELECT gesamtpreis(401) FROM dual;
+
+
+--durchschnittliche Bewertung
+CREATE OR REPLACE FUNCTION ausrechnung_bewertung
+RETURN NUMBER IS
+   total_punkte   NUMBER;
+   bewertung_count  NUMBER;
+   durschnitt     NUMBER;
+BEGIN
+   SELECT SUM(Punkte), COUNT(*) INTO total_punkte, bewertung_count
+   FROM Bewertung;
+
+
+   IF bewertung_count > 0 THEN
+      durschnitt := total_punkte/ bewertung_count;
+   END IF;
+
+   RETURN durschnitt;
+END;
+
+
+DECLARE
+   durschnitt NUMBER;
+BEGIN
+   durschnitt := ausrechnung_bewertung();
+   DBMS_OUTPUT.PUT_LINE('Durschnittlcihe Bewertung: ' || durschnitt);
+END;
+
+
+--Anzahl Neukunden / Monat
+CREATE OR REPLACE FUNCTION CalculateNewCustomersPerMonth(start_date DATE)
+RETURN NUMBER
+IS
+    new_customers_count NUMBER;
+BEGIN
+    SELECT COUNT() INTO new_customers_count
+    FROM Kunde
+    WHERE EXTRACT(YEAR FROM Registrierungs_Datum) = EXTRACT(YEAR FROM start_date)
+        AND EXTRACT(MONTH FROM Registrierungs_Datum) = EXTRACT(MONTH FROM start_date);
+
+    RETURN new_customers_count;
+END;
+
+---neue Triggers
+
+
+CREATE OR REPLACE TRIGGER Bewertung_Filter
+BEFORE INSERT ON Bewertung
+     FOR EACH ROW
+   DECLARE
+    order_placed_count NUMBER;
+
+BEGIN
+       SELECT COUNT(*) INTO order_placed_count FROM Bestellauftrag
+           WHERE Kunden_ID = :new.Kunden_ID  AND Angebot_ID = :new.Angebot_ID;
+       IF order_placed_count = 0
+           THEN RAISE_APPLICATION_ERROR(-20003 , 'you cant post any rating yet.' );
+           END IF;
+
+   end;
+
+--Triger (Cihat) Neue Preis Rechnen mit Coupon
+CREATE OR REPLACE TRIGGER update_preis_trigger
+BEFORE INSERT OR UPDATE ON Bestellauftrag
+FOR EACH ROW
+DECLARE
+  coupon_percent Coupon.Rabattprozent%TYPE;
+  coupon_ablaufdatum Coupon.ablaufDatum%TYPE;
+  is_valid Coupon.is_valid%TYPE;
+BEGIN
+  SELECT Rabattprozent, ablaufDatum,is_valid INTO coupon_percent, coupon_ablaufdatum,is_valid
+  FROM Coupon
+  WHERE Coupon_ID = :new.Coupon_ID;
+
+IF coupon_ablaufdatum < (SYSDATE) THEN
+    RAISE_APPLICATION_ERROR(-20004,'Abgelaufen');
+END IF;
+IF is_valid = 0 THEN
+    RAISE_APPLICATION_ERROR(-20006,'Error');
+END IF;
+
+IF coupon_percent IS NOT NULL THEN
+  :new.Preis := :new.Preis - (:new.Preis * coupon_percent/100);
+END IF;
+UPDATE Coupon
+  SET is_valid = 0          --set the code that has just been used to be invalid bc a code can only be used once
+  WHERE Coupon_ID = :new.Coupon_ID;
+EXCEPTION
+  WHEN NO_DATA_FOUND THEN
+    RAISE_APPLICATION_ERROR(-20002, 'Sie haben kein Coupon.');
+  WHEN OTHERS THEN
+    RAISE_APPLICATION_ERROR(-20003,'Coupon ist abgelaufen oder inaktive');
+END;
+--test Trigger (Cihat)
+--select * from bestellauftrag;
+--select * from coupon;
+
+-- create a sequence on Bestellauftrag, that generates a new ID each time
+--a new order is inserted. this avoids the violation of the PK constraint
+--and save us the manual entry of new Bestell_Id each time an order is placed /inserted
+
+
+--here the trigger that helps check that every bestell_ID in the table is new
+
+CREATE OR REPLACE TRIGGER bestell_id_trigger
+BEFORE INSERT ON BESTELLAUFTRAG
+FOR EACH ROW
+BEGIN
+    SELECT bestell_id_seq.nextval INTO :new.Bestell_ID FROM dual;
+END;
+
+
+
+
+
+--TESTFÄLLE
+
+--erstaml Kunde erstellen:
+INSERT INTO KUNDE (Kunden_ID) VALUES (1);
+
+--erstmal Coupon erstellen:
+INSERT INTO COUPON VALUES (1 , 2 , 0.15 , 0 ,'29-09-2023' );
+INSERT INTO COUPON VALUES (2 , 5 , 0.15 , 0 , '29-09-2023' );
+--Bestellauftrag aufgeben:
+INSERT INTO Bestellauftrag (Angebot_ID , BestellPreis) VALUES (1 , 100);
+
+--COUPON TESTEN
+
+-- valid Coupon_ID = 1
+INSERT INTO Bestellauftrag(Kunden_ID, Angebot_ID, BestellPreis, Coupon_ID) VALUES (1, 1, 100, 1);
+SELECT * FROM Bestellauftrag WHERE Kunden_ID = 1; -- Check the reduced price
+SELECT * FROM Coupon WHERE Coupon_ID = 1; -- Check the coupon is now inactive
+
+-- invalid Coupon_ID = 999
+INSERT INTO Bestellauftrag (Kunden_ID, Angebot_ID, BestellPreis, Coupon_ID) VALUES (1, 1, 100, 999);
+-- Expect an error because the coupon does not exist
+
+
+--ALTER USER INF2728 IDENTIFIED BY "PassWort3333";
+
+
+
+
+
+
+
+
+

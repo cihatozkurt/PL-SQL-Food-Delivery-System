@@ -1,0 +1,9 @@
+
+vlesung =
+  (DESCRIPTION =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = StudiDB.GM.TH-Koeln.de)(PORT = 1521))
+    (CONNECT_DATA =
+      (SERVER = DEDICATED)
+      (SID = vlesung)
+    )
+  )

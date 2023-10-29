@@ -1,0 +1,42 @@
+
+import oracledb as odb
+import cx_Oracle
+
+cx_Oracle.init_oracle_client(lib_dir=r"C:\orclinstant\instantclient_19_19")
+
+#import os
+
+#os.environ["TNS_ADMIN"] = "C:\instantclient_21_10"
+
+
+# Create a connection
+user = 'inf2728'
+host = 'studidb.gm.th-koeln.de'
+port = '1521'
+sid = 'vlesung'
+userpwd = 'PassWort3333'
+
+dsn_string = odb.makedsn(host, port, sid)
+connection = odb.connect(user = user, password = userpwd, dsn = dsn_string)
+
+if connection:
+    print("Connection successful!")
+
+
+# Create a cursor
+cur = connection.cursor()
+
+# Execute a query
+query = "select * from COWORKERS"
+cur.execute(query)
+
+print("work")
+
+# Fetch all rows from the last executed statement
+rows = cur.fetchall()
+
+for row in rows:
+    print(row)
+
+# Close the connection
+connection.close()
